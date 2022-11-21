@@ -1,0 +1,216 @@
+---
+title: "DANA4840_Final_Exam"
+author: "Billy Choy"
+date: '2022-08-13'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+gt = read.csv("GroundTruth.csv")
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+# Remove unuse column
+gt$X <- NULL
+gt$lesion_id <- NULL
+gt$sex  <- NULL
+gt$image_id <- NULL
+gt$path <- NULL
+gt$dx_type <- NULL
+gt$localization <- NULL
+gt$image_pixel <- NULL
+
+#Label replace dx column
+gt$dx <- NULL
+
+gt$age <-as.numeric(gt$age)
+gt$label <-as.factor(gt$label)
+```
+
+# Normalisation on pixel
+For column with c1 to c146 are pixel value in RGB, therefore we have to divide them by 256 bits for normalization.
+
+```{r}
+gt[2:148] = gt[2:148]/255
+```
+
+# Normalisation on age
+Next we normalise the age column.
+
+```{r}
+gt[1] = scale(gt[1], center = TRUE)
+```
+
+Let's have a quick check on the data
+```{r}
+View(gt)
+```
+```{r}
+colSums(is.na(gt))
+```
+
+# Kmeans
+```{r}
+# Within cluster sum of squares by cluster:
+# [1] 1856.834 1454.450 2293.645 1743.224 1634.729 1876.404 1487.317
+#  (between_SS / total_SS =  50.9 %)
+library(philentropy)
+library(stats)
+library(factoextra) 
+KM <- distance(gt[,c(2:148)], method= "dice")
+KM <- kmeans(gt[,c(2:148)], centers = 7) 
+KM
+```
+# Performance
+```{r}
+dfCombine <- cbind(gt, Cluster = KM$cluster-1)
+
+#Table Cluster and Symboling
+table(dfCombine$Cluster == gt$label)
+table(dfCombine$Cluster,   gt$label)
+```
+
+
+```{r}
+#Visualization in Clustering
+library(factoextra)
+fviz_cluster(KM, data = gt[,c(2:148)],
+           #  palette = c("#2E9FDF", "#00AFBB", "#E7B800", "#9B5DE5"), 
+             geom = "point",
+             ellipse.type = "convex", 
+             ggtheme = theme_bw()
+             )
+```
+```{r}
+par(mfrow=c(2,2))
+for (i in 2:148) {
+  boxplot(gt[,i]~KM$cluster, xlab="Cluster",
+          ylab=names(gt)[i], varwidth=T) 
+  }
+```
+
+#Elbow Graph on optimal k
+Looking at the elbom graph seems it make more sense to run a clustering with k=3. We try to cluster the universities in high, medium and low.
+```{r} 
+library(factoextra)
+fviz_nbclust(gt[,c(2:148)], kmeans, method = "wss",k.max=8) 
+```
+
+```{r} 
+#Silhouette method
+fviz_nbclust(gt[,c(2:148)], FUN = kmeans, method = "silhouette")
+```
+
+# Subset data
+```{r}
+library(tidyverse)
+
+df1 = gt %>%  filter (label == '0')
+df2 = gt %>%  filter (label == '1')
+df3 = gt %>%  filter (label == '2')
+df4 = gt %>%  filter (label == '3')
+df5 = gt %>%  filter (label == '4')
+df6 = gt %>%  filter (label == '5')
+df7 = gt %>%  filter (label == '6')
+
+
+set.seed(451)
+# Extract 5 random rows without replacement
+df1_100 <- df1 %>% sample_n(100, replace = FALSE) 
+df2_100 <- df2 %>% sample_n(100, replace = FALSE) 
+df3_100 <- df3 %>% sample_n(100, replace = FALSE) 
+df4_100 <- df4 %>% sample_n(100, replace = FALSE) 
+df5_100 <- df5 %>% sample_n(100, replace = FALSE) 
+df6_100 <- df6 %>% sample_n(100, replace = FALSE) 
+df7_100 <- df7 %>% sample_n(100, replace = FALSE) 
+
+#Combine gt_subset_100
+gt_subset_100 <- rbind(df1_100, df2_100, df3_100, df4_100, df5_100, df6_100, df7_100)
+
+#Kmean on gt_subset_100
+KM_100 <- distance(gt_subset_100[,c(2:148)], method= "dice")
+KM_100 <- kmeans(gt_subset_100[,c(2:148)], centers = 7) 
+KM_100
+
+```
+
+# Performance
+```{r}
+dfCombine2 <- cbind(gt_subset_100, Cluster = KM_100$cluster-1)
+
+#Table Cluster and Symboling
+table(dfCombine2$Cluster == gt_subset_100$label)
+table(dfCombine2$Cluster,   gt_subset_100$label)
+ 
+par(mfrow=c(2,2))
+for (i in 2:148) {
+  boxplot(gt_subset_100[,i]~KM_100$cluster, xlab="Cluster",
+          ylab=names(gt_subset_100)[i], varwidth=T) 
+  }
+```
+
+# For agglomerative clustering technique, identify the best approach for the data ("average", "single", "complete", "ward")
+```{r} 
+library(factoextra)
+library(cluster)
+library(purrr)
+
+  d = dist(gt_subset_100, method = "euclidean")
+  
+  # methods to assess
+  m <- c( "average", "single", "complete", "ward")
+  names(m) <- c( "average", "single", "complete", "ward")
+  
+  # function to compute coefficient
+  ac <- function(x) {
+    agnes(gt_subset_100, method = x)$ac
+  }
+  
+  map_dbl(m, ac)
+```
+Run agglomerative clustering technique with "ward"
+```{r} 
+#Hierarchical clustering using Ward linkage
+hc1 = hclust(d, method = "ward.D2")
+hc1
+  
+#cutting the tree
+plot(hc1, cex = 0.6)
+rect.hclust(hc1, k = 7, border = 2:5)  
+
+##based on experience, slicing horizontally to produce unique clusters either by specifying a similarity or the number of clusters desired
+democut<-cutree(hc1,k=7)
+democut
+```
+
+```{r}
+# compute divisive hierarchical clustering
+hc4 <- diana(gt_subset_100[,c(2:148)])
+# Divise coefficient is the amount of clustering structure found
+hc4$dc
+## [1] 0.8806264
+```
+```{r}
+# compute divisive hierarchical clustering
+hc7 <- diana(gt[,c(2:148)])
+# Divise coefficient is the amount of clustering structure found
+hc7$dc
+## [1] 0.8806264
+```
+
